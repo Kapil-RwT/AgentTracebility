@@ -1,0 +1,30 @@
+# Dashboard UIDs and panel IDs for Grafana.
+#
+# UIDs: override via env vars GRAFANA_MAIN_DASHBOARD_UID / GRAFANA_COREDNS_DASHBOARD_UID
+#       if you are pointing at a different Grafana instance or a cloned dashboard.
+#
+# Panel IDs: update here if your dashboard layout changes or panels are renumbered.
+# Tip: hover a panel title in Grafana → Edit → the ID appears in the URL (?editPanel=<id>).
+
+main_dashboard:
+  uid: zuhbR77Vk        # override via GRAFANA_MAIN_DASHBOARD_UID
+  panels:
+    linkerd_outbound_latency_deployment: 69
+    linkerd_outbound_latency_pod: 88
+    ingress_latency_total: 42
+    linkerd_inbound_latency_deployment: 104
+    linkerd_inbound_latency_pod: 86
+    max_storage_iops: 98
+    cpu_request: 62
+    cpu_throttle: 67     # verify panel ID in your dashboard
+    success_rate: null   # set to panel ID once confirmed in dashboard
+    total_rps: null      # set to panel ID once confirmed in dashboard
+
+coredns_dashboard:
+  uid: iYWQSXM7          # override via GRAFANA_COREDNS_DASHBOARD_UID
+  panels:
+    dns_latency: 28
+
+# node_dashboard: fill in uid after confirming the kubernetes-node-to-pods-metrics dashboard UID
+node_dashboard:
+  uid: null              # override via GRAFANA_NODE_DASHBOARD_UID

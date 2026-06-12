@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: traceability-agent
+  name: traceability-agent-deployment
+  namespace: ml-services
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: traceability-agent
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        linkerd.io/inject: enabled
+      labels:
+        app: traceability-agent
+    spec:
+      containers:
+      - args:
+        - python -m src.interfaces.slack_bot
+        command:
+        - sh
+        - -c
+        image: bicontainer.azurecr.io/traceability_agent_v0.1:latest
+        imagePullPolicy: Always
+        name: traceability-agent-container
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: SLACK_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: traceability-agent-secrets
+              key: SLACK_BOT_TOKEN
+        - name: SLACK_SIGNING_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: traceability-agent-secrets
+              key: SLACK_SIGNING_SECRET
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: traceability-agent-secrets
+              key: ANTHROPIC_API_KEY
+        resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+      - name: onboarding-az-mlpacr
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30

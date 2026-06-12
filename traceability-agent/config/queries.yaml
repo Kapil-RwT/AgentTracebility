@@ -1,0 +1,283 @@
+# PromQL templates used by the tool layer.
+# Placeholders: SERVICE, NAMESPACE, WINDOW (e.g. 5m), GROUP_BY, NODE_IP, DURATION_S
+#
+# Verify these metric names against your Prometheus instance.
+# Linkerd metrics use "deployment" label; adjust if your mesh uses a different label.
+
+linkerd_inbound_latency_p99: >
+  histogram_quantile(0.99,
+    sum(irate(response_latency_ms_bucket{
+      namespace="NAMESPACE",
+      direction="inbound",
+      prom="linkerd",
+      deployment!~"(.*)debug.*"
+    }[WINDOW])) by (le, GROUP_BY)
+  )
+
+linkerd_outbound_latency_p99: >
+  histogram_quantile(0.99,
+    sum(irate(response_latency_ms_bucket{
+      namespace="NAMESPACE",
+      direction="outbound",
+      prom="linkerd",
+      deployment!~"(.*)debug.*"
+    }[WINDOW])) by (le, GROUP_BY)
+  )
+
+haproxy_ingress_latency_p99_ms: >
+  histogram_quantile(0.99,
+    sum(rate(haproxy_backend_total_time_milliseconds_bucket{
+      backend=~"NAMESPACE_.*",
+      cluster="CLUSTER",
+      prom="ingress"
+    }[WINDOW])) by (le)
+  )
+
+cpu_throttle_pct: >
+  sum(increase(container_cpu_cfs_throttled_periods_total{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    container!="",
+    container!="POD"
+  }[WINDOW])) by (pod)
+  /
+  clamp_min(sum(increase(container_cpu_cfs_periods_total{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    container!="",
+    container!="POD"
+  }[WINDOW])) by (pod), 1)
+  * 100
+
+inbound_rpm_per_pod: >
+  sum(rate(request_total{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    direction="inbound"
+  }[WINDOW])) by (pod) * 60
+
+pod_restarts: >
+  increase(kube_pod_container_status_restarts_total{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE"
+  }[DURATION_Ss])
+
+disk_iops_per_pod: >
+  sum(
+    rate(container_fs_reads_total{pod=~"SERVICE-.*", namespace="NAMESPACE"}[WINDOW])
+    + rate(container_fs_writes_total{pod=~"SERVICE-.*", namespace="NAMESPACE"}[WINDOW])
+  ) by (pod)
+
+cpu_request_cores: >
+  sum(kube_pod_container_resource_requests{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    resource="cpu"
+  })
+
+node_cpu_usage_pct: >
+  100 - (avg(rate(node_cpu_seconds_total{
+    instance=~"NODE_IP.*",
+    mode="idle"
+  }[WINDOW])) * 100)
+
+node_disk_iops: >
+  rate(node_disk_reads_completed_total{instance=~"NODE_IP.*"}[WINDOW])
+  + rate(node_disk_writes_completed_total{instance=~"NODE_IP.*"}[WINDOW])
+
+node_disk_throughput_mbps: >
+  (rate(node_disk_read_bytes_total{instance=~"NODE_IP.*"}[WINDOW])
+  + rate(node_disk_written_bytes_total{instance=~"NODE_IP.*"}[WINDOW])) / 1e6
+
+node_network_mbps: >
+  (rate(node_network_transmit_bytes_total{instance=~"NODE_IP.*"}[WINDOW])
+  + rate(node_network_receive_bytes_total{instance=~"NODE_IP.*"}[WINDOW])) / 1e6
+
+node_disk_wait_ms: >
+  rate(node_disk_io_time_seconds_total{instance=~"NODE_IP.*"}[WINDOW]) * 1000
+
+node_memory_used_gb: >
+  (node_memory_MemTotal_bytes{instance=~"NODE_IP.*"}
+  - node_memory_MemAvailable_bytes{instance=~"NODE_IP.*"}) / 1e9
+
+memory_working_set_bytes: >
+  sum(container_memory_working_set_bytes{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    container!="",
+    container!="POD"
+  }) by (pod)
+
+memory_limit_bytes: >
+  sum(kube_pod_container_resource_limits{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    resource="memory"
+  }) by (pod)
+
+deployment_replicas_available: >
+  max(kube_deployment_status_replicas_available{namespace="NAMESPACE"})
+
+deployment_replicas_desired: >
+  max(kube_deployment_spec_replicas{namespace="NAMESPACE"})
+
+deployment_replicas_unavailable: >
+  sum(kube_deployment_status_replicas_unavailable{namespace="NAMESPACE"})
+
+dns_latency_p99_ms: >
+  histogram_quantile(0.99,
+    sum(rate(coredns_dns_request_duration_seconds_bucket[WINDOW])) by (le)
+  ) * 1000
+
+linkerd_success_rate_pct: >
+  sum(rate(response_total{
+    namespace="NAMESPACE",
+    pod=~"SERVICE-.*",
+    direction="inbound",
+    classification="success"
+  }[WINDOW]))
+  /
+  clamp_min(sum(rate(response_total{
+    namespace="NAMESPACE",
+    pod=~"SERVICE-.*",
+    direction="inbound"
+  }[WINDOW])), 0.0001)
+  * 100
+
+linkerd_total_rps: >
+  sum(rate(response_total{
+    namespace="NAMESPACE",
+    pod=~"SERVICE-.*",
+    direction="inbound"
+  }[WINDOW]))
+
+linkerd_error_rate_by_status: >
+  sum(rate(response_total{
+    namespace="NAMESPACE",
+    pod=~"SERVICE-.*",
+    direction="inbound",
+    classification!="success"
+  }[WINDOW])) by (status_code)
+  /
+  clamp_min(sum(rate(response_total{
+    namespace="NAMESPACE",
+    pod=~"SERVICE-.*",
+    direction="inbound"
+  }[WINDOW])), 0.0001)
+  * 100
+
+oom_events: >
+  floor(max(increase(container_oom_events_total{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    container!="",
+    container!="POD"
+  }[DURATION_Ss])) by (pod, container))
+
+pod_restart_reasons: >
+  kube_pod_container_status_terminated_reason{
+    pod=~"SERVICE-.*",
+    namespace="NAMESPACE",
+    reason!="Completed"
+  }
+
+hpa_desired_replicas: >
+  max(kube_horizontalpodautoscaler_status_desired_replicas{
+    namespace="NAMESPACE"
+  })
+
+hpa_current_replicas: >
+  max(kube_horizontalpodautoscaler_status_current_replicas{
+    namespace="NAMESPACE"
+  })
+
+hpa_min_replicas: >
+  kube_horizontalpodautoscaler_spec_min_replicas{
+    namespace="NAMESPACE"
+  }
+
+hpa_max_replicas: >
+  kube_horizontalpodautoscaler_spec_max_replicas{
+    namespace="NAMESPACE"
+  }
+
+hpa_cpu_utilization_pct: >
+  avg(kube_horizontalpodautoscaler_status_target_metric{
+    metric_name="cpu",
+    metric_target_type="utilization",
+    namespace="NAMESPACE"
+  })
+
+# ── Ingress health queries (HAProxy, QUS1C844k datasource) ───────────────────
+# All use proxy=~"NAMESPACE.*" for code/aborts/rpm (proxy label)
+# and backend=~"NAMESPACE.*" for latency histograms (backend label)
+
+ingress_latency_tq_ms: >
+  histogram_quantile(0.99,
+    sum(rate(haproxy_backend_http_request_wait_milliseconds_bucket{
+      backend=~"NAMESPACE.*",
+      cluster="CLUSTER",
+      prom="ingress"
+    }[WINDOW])) by (le)
+  )
+
+ingress_latency_tw_ms: >
+  histogram_quantile(0.99,
+    sum(rate(haproxy_backend_queue_wait_milliseconds_bucket{
+      backend=~"NAMESPACE.*",
+      cluster="CLUSTER",
+      prom="ingress"
+    }[WINDOW])) by (le)
+  )
+
+ingress_latency_tc_ms: >
+  histogram_quantile(0.99,
+    sum(rate(haproxy_backend_connection_wait_milliseconds_bucket{
+      backend=~"NAMESPACE.*",
+      cluster="CLUSTER",
+      prom="ingress"
+    }[WINDOW])) by (le)
+  )
+
+ingress_latency_tr_ms: >
+  histogram_quantile(0.99,
+    sum(rate(haproxy_backend_http_response_wait_milliseconds_bucket{
+      backend=~"NAMESPACE.*",
+      cluster="CLUSTER",
+      prom="ingress"
+    }[WINDOW])) by (le)
+  )
+
+ingress_5xx_count: >
+  sum(increase(haproxy_backend_http_responses_total{
+    proxy=~"NAMESPACE.*",
+    prom="ingress",
+    cluster="CLUSTER",
+    code="5xx"
+  }[WINDOW]))
+
+ingress_client_aborts: >
+  sum(irate(haproxy_backend_client_aborts_total{
+    proxy=~"NAMESPACE.*",
+    prom="ingress",
+    cluster="CLUSTER"
+  }[WINDOW]))
+
+ingress_rpm: >
+  sum(increase(haproxy_backend_http_requests_total{
+    proxy=~"NAMESPACE.*",
+    prom="ingress",
+    cluster="CLUSTER"
+  }[WINDOW]))
+
+linkerd_tcp_open_inbound: >
+  sum(tcp_open_connections{
+    namespace="NAMESPACE",
+    direction="inbound"
+  }) by (pod)
+
+linkerd_tcp_open_outbound: >
+  sum(tcp_open_connections{
+    namespace="NAMESPACE",
+    direction="outbound"
+  }) by (pod)

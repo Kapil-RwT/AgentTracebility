@@ -1,0 +1,74 @@
+# ── Worker node hardware limits ───────────────────────────────────────────────
+# These are defaults for Myntra's Azure application worker nodes (P20 disk).
+# UPDATE these if your cluster uses different VM sizes or disk types.
+# The agent flags a metric as breached when it exceeds alert_threshold_pct% of the limit.
+worker_node:
+  cores: 64
+  network_gbps: 32
+  disk_iops: 2300          # Azure P20 managed disk IOPS cap (shared across all containers)
+  disk_throughput_mbps: 150
+
+# Derived per-core allocations (used by fetch_disk_iops)
+per_core:
+  disk_iops: 12            # 2300 IOPS / ~64 cores / 1.5 (avg adjustment + logshipper overhead)
+  disk_throughput_mbps: 1.0
+  network_mbps: 500
+
+# Percentage of a limit at which a metric is flagged (Grafana turns it red at 85%)
+alert_threshold_pct: 85
+
+# ── CPU throttling classification ─────────────────────────────────────────────
+cpu_throttle:
+  # Fraction of time-series samples that must be above continuous_threshold_pct
+  # for the pod to be classified as "continuously" throttled (vs "spiky")
+  continuous_fraction: 0.40    # >40% of samples above continuous_pct → "continuous"
+  none_fraction: 0.05          # <5% of samples above continuous_pct → "none"
+  continuous_threshold_pct: 10 # throttle % level that defines "continuous" category
+  spiky_threshold_pct: 30      # throttle % level that defines "spiky" category
+
+# ── RPM distribution (load imbalance detection) ──────────────────────────────
+rpm:
+  imbalance_multiplier: 2.0    # flag as uneven if max_rpm > multiplier × min_rpm
+  min_pod_count: 3             # only flag imbalance when there are at least this many pods
+
+# ── DNS latency thresholds ────────────────────────────────────────────────────
+dns:
+  warn_latency_ms: 10
+  critical_latency_ms: 50
+
+# ── Latency outlier detection (fetch_latency_at_hop) ─────────────────────────
+latency:
+  # A pod's p99 is an outlier if it exceeds this multiple of the median p99 across pods
+  outlier_multiplier: 2.0
+  # HAProxy ingress: flag if the peak response time (after seconds→ms conversion) exceeded this.
+  # haproxy_backend_response_time_average_seconds is a gauge — values are multiplied by 1000→ms.
+  ingress_spike_ms: 100
+
+# ── Linkerd protocol detection window ─────────────────────────────────────────
+# A fixed outbound latency near 5 seconds indicates Linkerd protocol detection timeout.
+# Adjust if your Linkerd is configured with a different detection timeout.
+linkerd:
+  proto_detection_min_s: 4
+  proto_detection_max_s: 6
+
+# ── Pod restart query ─────────────────────────────────────────────────────────
+pods:
+  min_restart_window_s: 60     # minimum time window for restart queries (avoids divide-by-zero)
+
+# ── Memory utilization thresholds ─────────────────────────────────────────────
+memory:
+  warn_pct: 80       # flag pod if working_set >= 80% of memory limit
+  critical_pct: 90   # flag pod critical if working_set >= 90% of memory limit
+
+# ── Ingress health thresholds (HAProxy) ───────────────────────────────────────
+# Tq = time request spends queued at HAProxy before connection to backend starts
+# Tw = time queued waiting for a free backend server slot (connection pool)
+# Tc = time to establish TCP connection to backend
+# Tr = time backend app takes to return response (mirrors T4 inbound)
+ingress_health:
+  warn_tq_ms: 20        # >20ms means requests queuing at ingress (maxconn or backend saturation)
+  warn_tw_ms: 20        # >20ms means backend server pool exhausted
+  warn_tc_ms: 5         # >5ms TCP connect is slow (same-DC should be <1ms)
+  warn_tr_ms: 100       # >100ms backend response (mirrors latency spike threshold)
+  warn_5xx_per_min: 5   # >5 5xx responses/min is concerning
+  warn_aborts_per_s: 0.5  # >0.5 client aborts/s means HAProxy dropping connections
